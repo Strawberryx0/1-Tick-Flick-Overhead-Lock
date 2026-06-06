@@ -36,6 +36,10 @@ public class OneTickFlickPlugin extends Plugin
 	@Inject
 	private OneTickFlickOverlay overlay;
 	@Inject
+	private OneTickFlickOriginalOverlay originalOverlay;
+	@Inject
+	private OneTickFlickComboOverlay comboOverlay;
+	@Inject
 	private OneTickFlickConfig config;
 	@Inject
 	private Client client;
@@ -57,12 +61,18 @@ public class OneTickFlickPlugin extends Plugin
 
 		overlay.setVisible(true);
 		overlayManager.add(overlay);
+		originalOverlay.setVisible(true);
+		overlayManager.add(originalOverlay);
+		comboOverlay.setVisible(true);
+		overlayManager.add(comboOverlay);
 	}
 
 	@Override
 	protected void shutDown()
 	{
 		overlayManager.remove(overlay);
+		overlayManager.remove(originalOverlay);
+		overlayManager.remove(comboOverlay);
 		currentTickClicks.clear();
 		nextTickClicks.clear();
 	}
@@ -75,39 +85,13 @@ public class OneTickFlickPlugin extends Plugin
 			return;
 		}
 
-		switch (event.getKey())
-		{
-			case "greenStart":
-				overlay.setGreenStart(config.greenStart());
-				break;
-			case "greenEnd":
-				overlay.setGreenEnd(config.greenEnd());
-				break;
-			case "showCombo":
-				overlay.setShowCombo(config.showCombo());
-				break;
-			case "targetZoneColor":
-				overlay.setTargetZoneColor(config.targetZoneColor());
-				break;
-			case "backgroundColor":
-				overlay.setBackgroundColor(config.backgroundColor());
-				break;
-			case "clickColor":
-				overlay.setClickColor(config.clickColor());
-				break;
-			case "swipeLineColor":
-				overlay.setSwipeLineColor(config.swipeLineColor());
-				break;
-			case "borderColor":
-				overlay.setBorderColor(config.borderColor());
-				break;
-			case "comboTextColor":
-				overlay.setComboTextColor(config.comboTextColor());
-				break;
-			case "swipeLineWidth":
-				overlay.setSwipeLineWidth(config.swipeLineWidth());
-				break;
-		}
+		overlay.loadConfig(config);
+		originalOverlay.loadConfig(config);
+		comboOverlay.setShowCombo(config.showCombo());
+		comboOverlay.setComboText(config.comboText());
+		comboOverlay.setComboTextSize(config.comboTextSize());
+		comboOverlay.setComboTextOpacity(config.comboTextOpacity());
+		comboOverlay.setComboTextColor(config.comboTextColor());
 	}
 
 	@Subscribe
@@ -124,6 +108,7 @@ public class OneTickFlickPlugin extends Plugin
 
 		currentTickClicks.clear();
 		overlay.newTick();
+		originalOverlay.newTick();
 		lastTickTime = System.currentTimeMillis();
 
 		if (!nextTickClicks.isEmpty())
@@ -132,6 +117,7 @@ public class OneTickFlickPlugin extends Plugin
 			{
 				currentTickClicks.add(offset);
 				overlay.recordClick(offset);
+				originalOverlay.recordClick(offset);
 			}
 			nextTickClicks.clear();
 		}
@@ -144,11 +130,15 @@ public class OneTickFlickPlugin extends Plugin
 
 			if (timedOut && (config.timeoutWhilePrayerActive() || !prayerActive)) {
 				overlay.setVisible(false);
+				originalOverlay.setVisible(false);
+				comboOverlay.setVisible(false);
 			}
 		}
 		else if (!config.enableTimeout() && !overlay.isVisible())
 		{
 			overlay.setVisible(true);
+			originalOverlay.setVisible(true);
+			comboOverlay.setVisible(true);
 		}
 	}
 
@@ -182,13 +172,16 @@ public class OneTickFlickPlugin extends Plugin
 		{
 			currentTickClicks.add(offset);
 			overlay.recordClick(offset);
+			originalOverlay.recordClick(offset);
 		}
 
 		lastInteraction = System.currentTimeMillis();
 		if (!overlay.isVisible())
 		{
-			// No matter what the overlay timeout options are, we want to show the overlay when the player clicks the quick prayer orb
+			// No matter what the overlay timeout options are, show the overlays when the player clicks a tracked prayer control.
 			overlay.setVisible(true);
+			originalOverlay.setVisible(true);
+			comboOverlay.setVisible(true);
 		}
 	}
 

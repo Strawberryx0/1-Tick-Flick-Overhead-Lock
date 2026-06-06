@@ -5,67 +5,58 @@ import java.awt.*;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import lombok.Setter;
+import net.runelite.api.Client;
+import net.runelite.api.Perspective;
+import net.runelite.api.Player;
+import net.runelite.api.Skill;
+import net.runelite.api.coords.LocalPoint;
 import net.runelite.client.ui.overlay.Overlay;
+import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 public class OneTickFlickOverlay extends Overlay
 {
-	private static final int MIN_BAR_HEIGHT = 5;
-	private static final int HIDDEN_COMBO_SPACE = 6;
-	private static final int COMBO_TEXT_SPACE = 20;
-	private static final int DEFAULT_BAR_HEIGHT = 12;
-	private static final int DEFAULT_TEXT_SPACE = 20;
-	private static final int X_SIZE = 4;
+	private static final Color DEFAULT_BAR_FILL_COLOR = new Color(0, 149, 151);
+	private static final Color DEFAULT_BAR_BACKGROUND_COLOR = Color.black;
+	private static final Color DEFAULT_CLICK_FLASH_COLOR = Color.white;
+	private static final Color DEFAULT_SWIPE_LINE_COLOR = Color.CYAN;
+	private static final Dimension PRAYER_BAR_SIZE = new Dimension(30, 5);
 	private static final int TICK_LENGTH = 600;
-	private static final int MIN_WIDTH = 50;
-	private static final int DEFAULT_WIDTH = 150;
-	private static final Dimension DEFAULT_SIZE = new Dimension(DEFAULT_WIDTH, DEFAULT_BAR_HEIGHT + DEFAULT_TEXT_SPACE);
 
 	private final OneTickFlickPlugin plugin;
+	private final Client client;
 	private final List<Integer> clickOffsets = new CopyOnWriteArrayList<>();
 	private volatile boolean visible = true;
 
-	@Setter
-	private int greenStart;
-	@Setter
-	private int greenEnd;
-	private boolean showCombo;
-	@Setter
-	private Color targetZoneColor;
-	@Setter
-	private Color backgroundColor;
-	@Setter
-	private Color clickColor;
-	@Setter
-	private Color swipeLineColor;
-	@Setter
-	private Color borderColor;
-	@Setter
-	private Color comboTextColor;
-	@Setter
-	private int swipeLineWidth;
+	private OneTickFlickBarStyle barStyle;
+	private Color runeliteBarFillColor;
+	private Color runeliteBarBackgroundColor;
+	private Color runeliteClickFlashColor;
+	private Color runeliteSwipeLineColor;
+	private int runeliteSwipeLineWidth;
+	private int runeliteClickFlashWidth;
 
 
 	@Inject
-	OneTickFlickOverlay(OneTickFlickPlugin plugin, OneTickFlickConfig config)
+	OneTickFlickOverlay(OneTickFlickPlugin plugin, Client client, OneTickFlickConfig config)
 	{
 		this.plugin = plugin;
-		greenStart = config.greenStart();
-		greenEnd = config.greenEnd();
-		showCombo = config.showCombo();
-		targetZoneColor = config.targetZoneColor();
-		backgroundColor = config.backgroundColor();
-		clickColor = config.clickColor();
-		swipeLineColor = config.swipeLineColor();
-		borderColor = config.borderColor();
-		comboTextColor = config.comboTextColor();
-		swipeLineWidth = config.swipeLineWidth();
+		this.client = client;
+		loadConfig(config);
 
-		setPosition(OverlayPosition.BOTTOM_LEFT);
-		setPreferredSize(DEFAULT_SIZE);
-		setMinimumSize(getMinimumHeight());
-		setResizable(true);
+		setPosition(OverlayPosition.DYNAMIC);
+		setLayer(OverlayLayer.ABOVE_SCENE);
+	}
+
+	void loadConfig(OneTickFlickConfig config)
+	{
+		barStyle = config.barStyle();
+		runeliteBarFillColor = config.runeliteBarFillColor();
+		runeliteBarBackgroundColor = config.runeliteBarBackgroundColor();
+		runeliteClickFlashColor = config.runeliteClickFlashColor();
+		runeliteSwipeLineColor = config.runeliteSwipeLineColor();
+		runeliteSwipeLineWidth = config.runeliteSwipeLineWidth();
+		runeliteClickFlashWidth = config.runeliteClickFlashWidth();
 	}
 
 	void recordClick(int offset)
@@ -88,85 +79,81 @@ public class OneTickFlickOverlay extends Overlay
 		return visible;
 	}
 
-	public void setShowCombo(boolean showCombo)
-	{
-		this.showCombo = showCombo;
-		setMinimumSize(getMinimumHeight());
-	}
-
 	@Override
 	public Dimension render(Graphics2D g)
 	{
-		if (!visible)
+		if (!visible || barStyle != OneTickFlickBarStyle.RUNELITE_PRAYER)
 		{
 			return null;
 		}
 
-		Rectangle bounds = getBounds();
-		Dimension size = getPreferredSize() == null ? DEFAULT_SIZE : getPreferredSize();
-
-		int reservedSpace = getReservedSpace();
-		int width = size.width;
-		int height = size.height;
-		if (bounds != null && bounds.width > 0 && bounds.height > 0)
+		Player localPlayer = client.getLocalPlayer();
+		if (localPlayer == null)
 		{
-			width = Math.max(bounds.width, MIN_WIDTH);
-			height = Math.max(bounds.height, getMinimumHeight());
+			return null;
 		}
 
-		int barHeight = Math.max(MIN_BAR_HEIGHT, height - reservedSpace);
-		int barY = showCombo ? 0 : (height - barHeight) / 2;
-
-		int greenX1 = width * greenStart / TICK_LENGTH;
-		int greenX2 = width * greenEnd / TICK_LENGTH;
-
-		g.setColor(backgroundColor);
-		g.fillRect(0, barY, greenX1, barHeight);
-		g.fillRect(greenX2, barY, width - greenX2, barHeight);
-
-		g.setColor(targetZoneColor);
-		g.fillRect(greenX1, barY, greenX2 - greenX1, barHeight);
-
-		long ms = plugin.millisSinceTick();
-		int swipeLineX = (int) (width * ms / (double) TICK_LENGTH);
-		swipeLineX = Math.min(swipeLineX, width - swipeLineWidth);
-
-		g.setColor(swipeLineColor);
-		g.fillRect(swipeLineX, barY, swipeLineWidth, barHeight);
-
-		g.setColor(borderColor);
-		g.drawRect(0, barY, width, barHeight);
-
-		g.setColor(clickColor);
-		int xSize = Math.min(X_SIZE, Math.max(1, (barHeight - 1) / 2));
-		int y1 = barY + barHeight / 2 - xSize;
-		int y2 = barY + barHeight / 2 + xSize;
-		for (int offset : clickOffsets)
+		LocalPoint localLocation = localPlayer.getLocalLocation();
+		if (localLocation == null)
 		{
-			int x = width * offset / TICK_LENGTH;
-			g.drawLine(x - xSize, y1, x + xSize, y2);
-			g.drawLine(x - xSize, y2, x + xSize, y1);
+			return null;
 		}
 
-		if (showCombo)
+		net.runelite.api.Point canvasPoint = Perspective.localToCanvas(
+				client,
+				localLocation,
+				client.getPlane(),
+				localPlayer.getLogicalHeight() + 10);
+		if (canvasPoint == null)
 		{
-			g.setColor(comboTextColor);
-			String text = "Combo: " + plugin.getCombo();
-			int tx = (width - g.getFontMetrics().stringWidth(text)) / 2;
-			int ty = barY + barHeight + g.getFontMetrics().getAscent() + 2;
-			g.drawString(text, tx, ty);
+			return null;
 		}
 
-		return new Dimension(width, height);
+		renderRunelitePrayerStyle(g, canvasPoint);
+		return null;
 	}
 
-	private int getMinimumHeight()
+	private void renderRunelitePrayerStyle(Graphics2D g, net.runelite.api.Point canvasPoint)
 	{
-		return MIN_BAR_HEIGHT + getReservedSpace();
+		final int barX = canvasPoint.getX() - 15;
+		final int barY = canvasPoint.getY();
+		final int barWidth = PRAYER_BAR_SIZE.width;
+		final int barHeight = PRAYER_BAR_SIZE.height;
+		final float ratio = (float) client.getBoostedSkillLevel(Skill.PRAYER) / client.getRealSkillLevel(Skill.PRAYER);
+		final int progressFill = (int) Math.ceil(Math.min((barWidth * ratio), barWidth));
+
+		g.setColor(visibleColor(runeliteBarBackgroundColor, DEFAULT_BAR_BACKGROUND_COLOR));
+		g.fillRect(barX, barY, barWidth, barHeight);
+		g.setColor(visibleColor(runeliteBarFillColor, DEFAULT_BAR_FILL_COLOR));
+		g.fillRect(barX, barY, progressFill, barHeight);
+
+		final long ms = Math.min(plugin.millisSinceTick(), TICK_LENGTH);
+		final int xOffset = (int) (barWidth * ms / (double) TICK_LENGTH);
+
+		final Shape oldClip = g.getClip();
+		g.setClip(barX, barY, barWidth, barHeight);
+		try
+		{
+			g.setColor(visibleColor(runeliteSwipeLineColor, DEFAULT_SWIPE_LINE_COLOR));
+			g.fillRect(barX + xOffset, barY, Math.max(1, Math.min(runeliteSwipeLineWidth, barWidth - xOffset)), barHeight);
+
+			g.setColor(visibleColor(runeliteClickFlashColor, DEFAULT_CLICK_FLASH_COLOR));
+			for (int offset : clickOffsets)
+			{
+				final int x = barX + barWidth * offset / TICK_LENGTH;
+				final int flashWidth = Math.max(1, Math.min(runeliteClickFlashWidth, barWidth));
+				final int flashX = Math.max(barX, Math.min(barX + barWidth - flashWidth, x));
+				g.fillRect(flashX, barY, flashWidth, barHeight);
+			}
+		}
+		finally
+		{
+			g.setClip(oldClip);
+		}
 	}
 
-	private int getReservedSpace()
+	private static Color visibleColor(Color color, Color fallback)
 	{
-		return showCombo ? COMBO_TEXT_SPACE : HIDDEN_COMBO_SPACE;
+		return color == null || color.getAlpha() == 0 ? fallback : color;
 	}
 }
